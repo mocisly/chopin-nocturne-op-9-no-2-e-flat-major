@@ -1,15 +1,16 @@
 \version "2.26.0"
 \pointAndClickOff
 % Frederic Chopin: Nocturne in E-flat major, Op. 9 No. 2.
-% Based on the user's MusicXML and matching four-page PDF (MuseScore 2.1.0).
-% The approved A3 / 17 pt title, margins, fonts and piano-staff style are retained.
+% This A4 reflow uses the supplied self-contained LY as its musical authority.
+% Spacious A4 print layout; original title, music and playback tracks are retained.
 % XML measure labels retain the source's pickup 0 and measures 1--37.
 % At XML33/34 the source actually supplies three quarters per measure;
 % the hidden 6/4 is retained with an explicit measureLength, without added rests.
-% Three damaged MusicXML trill spanners (XML7/15/23) are restored from the PDF.
-% Playback metronomes absent from the PDF are preserved in an invisible track.
-% Contour repairs keep the original musical events and all slur endpoints.
-% Parenthesized pedal reminders on XML34/35 follow the reference PDF.
+% Historical source repair: XML7/15/23 trill spans were restored from its PDF.
+% Original playback metronomes remain in the unchanged invisible tempo track.
+% Current layout changes preserve all submitted music and original slur endpoints.
+% The original parenthesized pedal reminders on XML34/35 remain unchanged.
+% Earlier MusicXML/PDF references describe source history, not new cross-checks.
 D = \tweak Stem.direction #DOWN \etc
 U = \tweak Stem.direction #UP \etc
 % The PDF places z between f and p; playback retains the source fp event.
@@ -30,19 +31,22 @@ fzp = \tweak text "fzp" \fp
   midititle = "Nocturne in E-flat major, Op. 9 No. 2"
   tagline = ##f
 }
-#(set-global-staff-size 17)
+#(set-global-staff-size 19.5)
 #(ly:set-option 'midi-extension "mid")
 \paper {
-  #(set-paper-size "a3")
-  page-count = 2
-  top-margin = 12\mm
-  bottom-margin = 12\mm
-  left-margin = 15\mm
-  right-margin = 15\mm
-  indent = 12\mm
+  #(set-paper-size "a4")
+  page-breaking = #ly:optimal-breaking
+  max-systems-per-page = #4
+  top-margin = 20\mm
+  bottom-margin = 22\mm
+  left-margin = 20\mm
+  right-margin = 20\mm
+  indent = 14\mm
   short-indent = 2.4\mm
+  ragged-right = ##f
   ragged-last = ##f
-  ragged-last-bottom = ##f
+  ragged-bottom = ##f
+  ragged-last-bottom = ##t
   print-first-page-number = ##f
   bookTitleMarkup = \markup \column {
     \fill-line { \fromproperty #'header:title }
@@ -58,10 +62,219 @@ fzp = \tweak text "fzp" \fp
   evenHeaderMarkup = ##f
   oddFooterMarkup = \markup \fill-line { "" \if \should-print-page-number \abs-fontsize #9 \fromproperty #'page:page-number-string }
   evenFooterMarkup = \markup \fill-line { \if \should-print-page-number \abs-fontsize #9 \fromproperty #'page:page-number-string "" }
-  markup-system-spacing = #'((basic-distance . 8) (minimum-distance . 6) (padding . 2) (stretchability . 0))
+  markup-system-spacing = #'((basic-distance . 12) (minimum-distance . 8) (padding . 4) (stretchability . 0))
   top-system-spacing = #'((basic-distance . 6) (minimum-distance . 4) (padding . 1))
-  system-system-spacing = #'((basic-distance . 16) (minimum-distance . 10) (padding . 2) (stretchability . 20))
+  system-system-spacing = #'((basic-distance . 22) (minimum-distance . 16) (padding . 4) (stretchability . 10))
+  last-bottom-spacing = #'((basic-distance . 6) (minimum-distance . 4) (padding . 2))
 }
+% Four finite optical corrections identified in the actual A4 PDF ink.
+% Select real source voices/times/pitches.  All source events, original
+% bounds, note columns, head memberships and native stencils are retained.
+#(define nocturne-aFour-optics-proof-path #f)
+#(define (Nocturne_four_optics_engraver context)
+   (let ((keys (make-hash-table 1400)) (slurs '()) (pending '())
+         (seen (make-hash-table 100)) (hits (make-hash-table 7))
+         (curve-rows
+          '(("m4-break" 24 ("rightMain|24|0|0,6,-1/2")
+             ("rightMain|49/2|0|1,4,0") 2 0
+             ((0 . 0) (0 . 0) (-1/8 . 0) (-1/4 . 0)))
+            ("m12-natural" 70 ("rightMain|70|0|0,3,1/2" "rightMain|70|0|0,6,0")
+             ("rightMain|72|0|0,5,-1/2" "rightMain|72|0|1,1,0") 1 0
+             ((0 . 0) (0 . -3/8) (0 . 0) (0 . 0)))))
+         (grace-rows
+          '(("m22-grace" 259/2 -1/2 (1 4 0) -1/4)
+            ("m27-grace" 161 -1/4 (1 2 -1/2) -1/4))))
+     (define (proof kind key data)
+       (when nocturne-aFour-optics-proof-path
+         (let ((port (open-file nocturne-aFour-optics-proof-path "a")))
+           (format port "~a\t~a\t~s\n" kind key data) (close-port port))))
+     (define (claim key)
+       (when (hash-ref hits key #f) (ly:error "Duplicate nocturne optical target: ~a" key))
+       (hash-set! hits key #t))
+     (define (array g prop)
+       (let ((v (ly:grob-object g prop)))
+         (if (ly:grob-array? v) (ly:grob-array->list v) '())))
+     (define (pitch-key h)
+       (let ((p (ly:event-property (ly:grob-property h 'cause) 'pitch)))
+         (list (ly:pitch-octave p) (ly:pitch-notename p) (ly:pitch-alteration p))))
+     (define (bound-keys col)
+       (sort (map (lambda (h) (or (hashq-ref keys h #f)
+                                  (ly:error "Missing nocturne source head identity")))
+                  (array col 'note-heads)) string<?))
+     (define (pieces g)
+       (let* ((o (ly:grob-original g)) (p (ly:spanner-broken-into o)))
+         (if (pair? p) p (list o))))
+     (make-engraver
+       (acknowledgers
+         ((note-head-interface e h source)
+          (let* ((c (ly:translator-context source)) (m (ly:context-current-moment c))
+                 (p (pitch-key h)))
+            (hashq-set! keys h (format #f "~a|~a|~a|~a,~a,~a" (ly:context-id c)
+                                (* 4 (ly:moment-main m)) (* 4 (ly:moment-grace m))
+                                (car p) (cadr p) (caddr p)))))
+         ((slur-interface e g source)
+          (let* ((c (ly:translator-context source)) (m (ly:context-current-moment c)))
+            (when (and (eq? (grob::name g) 'Slur) (equal? (ly:context-id c) "rightMain")
+                       (zero? (ly:moment-grace m)) (not (hashq-ref seen g #f)))
+              (for-each (lambda (row)
+                          (when (= (* 4 (ly:moment-main m)) (cadr row))
+                            (hashq-set! seen g #t) (set! slurs (cons (cons g row) slurs))))
+                        curve-rows))))
+         ((note-column-interface e col source)
+          (let* ((c (ly:translator-context source)) (m (ly:context-current-moment c)))
+            (when (and (equal? (ly:context-id c) "rightMain") (not (hashq-ref seen col #f)))
+              (for-each (lambda (row)
+                          (when (and (= (* 4 (ly:moment-main m)) (cadr row))
+                                     (= (* 4 (ly:moment-grace m)) (caddr row)))
+                            (hashq-set! seen col #t) (set! pending (cons (cons col row) pending))))
+                        grace-rows)))))
+       ((stop-translation-timestep e)
+        (for-each
+         (lambda (entry)
+           (let* ((col (car entry)) (r (cdr entry)) (key (car r))
+                  (heads (array col 'note-heads)) (pitches (map pitch-key heads))
+                  (stem (ly:grob-object col 'stem)) (xp (ly:grob-parent col X))
+                  (yp (ly:grob-parent col Y)) (causes (map (lambda (h) (ly:grob-property h 'cause)) heads))
+                  (hx (map (lambda (h) (ly:grob-parent h X)) heads))
+                  (hy (map (lambda (h) (ly:grob-parent h Y)) heads)))
+             (unless (equal? pitches (list (list-ref r 3)))
+               (ly:error "Unexpected grace-column source pitch: ~a" key))
+             (claim key)
+             ; Do not let horizontal spacing absorb this optical offset.
+             (let ((previous-after (ly:grob-property-data col 'after-line-breaking))
+                   (placed #f))
+               (ly:grob-set-property! col 'after-line-breaking
+                 (lambda (g)
+                   (when (procedure? previous-after) (previous-after g))
+                   (unless placed
+                     (set! placed #t)
+                     (let* ((ref (ly:grob-parent g X))
+                            (before (ly:grob-relative-coordinate g ref X))
+                            (dx (list-ref r 4)))
+                       (ly:grob-translate-axis! g dx X)
+                       (let ((actual (- (ly:grob-relative-coordinate g ref X) before)))
+                         (unless (< (abs (- actual dx)) 0.00001)
+                           (ly:error "Late grace-column shift differed: ~a" key))
+                         (proof "column-after-spacing" key (list dx actual #t))))))))
+             (unless (and (eq? xp (ly:grob-parent col X)) (eq? yp (ly:grob-parent col Y))
+                          (eq? stem (ly:grob-object col 'stem)) (equal? heads (array col 'note-heads))
+                          (equal? causes (map (lambda (h) (ly:grob-property h 'cause)) heads))
+                          (equal? hx (map (lambda (h) (ly:grob-parent h X)) heads))
+                          (equal? hy (map (lambda (h) (ly:grob-parent h Y)) heads)))
+               (ly:error "Grace-column optical translation changed native ownership: ~a" key))
+             (proof "column-selection" key (list (cadr r) (caddr r) pitches (list-ref r 4) #t))))
+         pending)
+        (set! pending '()))
+       ((finalize e)
+        (for-each
+         (lambda (entry)
+           (let* ((slur (car entry)) (r (cdr entry)) (key (car r))
+                  (left (ly:spanner-bound slur LEFT)) (right (ly:spanner-bound slur RIGHT))
+                  (cols (array slur 'note-columns)) (cause (ly:grob-property slur 'cause))
+                  (stencil (ly:grob-property-data slur 'stencil))
+                  (old (ly:grob-property-data slur 'control-points))
+                  (after (ly:grob-property-data slur 'after-line-breaking))
+                  (expected (list-ref r 4)) (index (list-ref r 5)) (delta (list-ref r 6)))
+             (unless (and (equal? (bound-keys left) (list-ref r 2))
+                          (equal? (bound-keys right) (list-ref r 3)) (procedure? old))
+               (ly:error "Nocturne Slur original endpoints/native stencil callback differ: ~a" key))
+             (claim key)
+             (ly:grob-set-property! slur 'control-points
+               (lambda (g)
+                 (let* ((native (old g)) (ps (pieces g)) (n (length ps))
+                        (idx (list-index (lambda (piece) (eq? piece g)) ps)))
+                   (unless (and (list? native) (= (length native) 4) (every number-pair? native))
+                     (ly:error "Invalid native Slur controls: ~a" key))
+                   (if (and (eq? g (ly:grob-original g)) (= n 1) (> expected 1)) native
+                       (begin
+                         (unless (and idx (= n expected))
+                           (ly:error "Nocturne Slur fragment layout changed: ~a" key))
+                         (let* ((space (ly:staff-symbol-staff-space g))
+                                (result (if (= index idx)
+                                     (map (lambda (p d) (cons (+ (car p) (* space (car d)))
+                                                              (+ (cdr p) (* space (cdr d))))) native delta)
+                                     native)))
+                           (proof "controls" key (list idx n delta native result)) result))))))
+             (ly:grob-set-property! slur 'after-line-breaking
+               (lambda (g) (when (procedure? after) (after g))
+                 (unless (= (length (pieces g)) expected)
+                   (ly:error "Rendered nocturne Slur fragment count changed: ~a" key))))
+             (unless (and (eq? left (ly:spanner-bound slur LEFT)) (eq? right (ly:spanner-bound slur RIGHT))
+                          (equal? cols (array slur 'note-columns)) (eq? cause (ly:grob-property slur 'cause))
+                          (eq? stencil (ly:grob-property-data slur 'stencil)))
+               (ly:error "Nocturne Slur association or native stencil changed: ~a" key))
+             (proof "source-selection" key (list (bound-keys left) (bound-keys right) expected index #t))))
+         slurs)
+        (for-each (lambda (r) (unless (hash-ref hits (car r) #f)
+                                (ly:error "Nocturne optical target missing: ~a" (car r))))
+                  (append curve-rows grace-rows))))))
+
+% Three finite changes to the printed X position of complete existing grobs.
+% Fields: native grob name, source Voice, source Staff, main/grace quarters,
+% expected literal source marking, added X in staff spaces.
+#(define nocturne-aFour-mark-shifts
+   '((Fingering "rightMain" "1" 259/2 -1/2 "2" -1/4)
+     (DynamicText "rightMain" "1" 401/2 0 "pp" 3/8)
+     (DynamicText "rightMain" "1" 413/2 0 "ppp" 3/8)))
+#(define (nocturne-aFour-mark-staff ctx)
+   (cond ((not (ly:context? ctx)) "")
+         ((eq? (ly:context-name ctx) 'Staff) (ly:context-id ctx))
+         (else (nocturne-aFour-mark-staff (ly:context-parent ctx)))))
+#(define (nocturne-aFour-mark-label g)
+   (let loop ((event (ly:grob-property g 'cause #f)) (depth 0))
+     (cond
+       ((and (ly:grob? event) (< depth 8))
+        (loop (ly:grob-property event 'cause #f) (+ depth 1)))
+       ((not (ly:stream-event? event)) #f)
+       ((eq? (grob::name g) 'Fingering)
+        (let ((digit (ly:event-property event 'digit #f)))
+          (and digit (format #f "~a" digit))))
+       (else (ly:event-property event 'text #f)))))
+#(define (Nocturne_aFour_mark_clearance_engraver context)
+   (let ((matched (make-hash-table 5)) (seen (make-hash-table 200)))
+     (make-engraver
+       (acknowledgers
+         ((grob-interface engraver g source-engraver)
+          (when (and (memq (grob::name g) '(Fingering DynamicText))
+                     (not (hashq-ref seen g #f)))
+            (hashq-set! seen g #t)
+            (let* ((ctx (ly:translator-context source-engraver))
+                   (m (ly:context-current-moment ctx)))
+              (for-each
+                (lambda (r)
+                  (when (and (eq? (grob::name g) (list-ref r 0))
+                             (string=? (ly:context-id ctx) (list-ref r 1))
+                             (string=? (nocturne-aFour-mark-staff ctx) (list-ref r 2))
+                             (= (* 4 (ly:moment-main m)) (list-ref r 3))
+                             (= (* 4 (ly:moment-grace m)) (list-ref r 4))
+                             (equal? (nocturne-aFour-mark-label g) (list-ref r 5)))
+                    (when (hashq-ref matched r #f)
+                      (ly:error "Duplicate Nocturne marking clearance target: ~s" r))
+                    (hashq-set! matched r g)))
+                nocturne-aFour-mark-shifts)))))
+       ((finalize engraver)
+        (for-each
+          (lambda (r)
+            (let ((g (hashq-ref matched r #f)))
+              (unless (ly:grob? g)
+                (ly:error "Missing Nocturne marking clearance target: ~s" r))
+              (let ((old (ly:grob-property g 'extra-offset '(0 . 0)))
+                    (xp (ly:grob-parent g X)) (yp (ly:grob-parent g Y))
+                    (cause (ly:grob-property g 'cause #f))
+                    (text (ly:grob-property-data g 'text))
+                    (stencil (ly:grob-property-data g 'stencil)))
+                (unless (number-pair? old)
+                  (ly:error "Invalid original marking offset: ~s" r))
+                (ly:grob-set-property! g 'extra-offset
+                  (cons (+ (car old) (list-ref r 6)) (cdr old)))
+                (unless (and (eq? xp (ly:grob-parent g X))
+                             (eq? yp (ly:grob-parent g Y))
+                             (eq? cause (ly:grob-property g 'cause #f))
+                             (equal? text (ly:grob-property-data g 'text))
+                             (eq? stencil (ly:grob-property-data g 'stencil)))
+                  (ly:error "Nocturne marking ownership changed: ~s" r)))))
+          nocturne-aFour-mark-shifts)))))
+
 \layout {
   \context { \Staff
     printKeyCancellation = ##f
@@ -69,10 +282,15 @@ fzp = \tweak text "fzp" \fp
     \override SustainPedalLineSpanner.staff-padding = #2
   }
   \context { \Score
+    \consists #Nocturne_four_optics_engraver
+    \consists #Nocturne_aFour_mark_clearance_engraver
     autoBeaming = ##f
+    \override SpacingSpanner.base-shortest-duration = #(ly:make-moment 1/16)
+    \override SpacingSpanner.shortest-duration-space = #2.2
+    \override SpacingSpanner.spacing-increment = #1.3
   }
   \context { \PianoStaff
-    \override StaffGrouper.staff-staff-spacing = #'((basic-distance . 12) (minimum-distance . 10) (padding . 2) (stretchability . 0))
+    \override StaffGrouper.staff-staff-spacing = #'((basic-distance . 14) (minimum-distance . 12) (padding . 3) (stretchability . 2))
   }
 }
 
@@ -543,6 +761,62 @@ pedalMidi = {
   s1*3/2 | % XML measure 37
 }
 
+% Print-only copy: remove obsolete forced line/page breaks, preserving
+% all music variables and the MIDI score exactly as submitted.
+#(define (nocturne-aFour-print music)
+   (music-filter
+     (lambda (m)
+       (not (memq (ly:music-property m 'name)
+                  '(LineBreakEvent PageBreakEvent))))
+     (ly:music-deep-copy music)))
+
+% This zero-sound layout track keeps the source XML27/28 slur's original
+% two-piece graphical shape and gives the dense XML30 and XML33 runs their
+% own systems. Other line/page breaks are chosen by the native layout engine.
+aFourLayout = {
+  s1*1/8 | % XML measure 0
+  s1*3/2 | % XML measure 1
+  s1*3/2 | % XML measure 2
+  s1*3/2 | % XML measure 3
+  s1*3/2 | % XML measure 4
+  s1*3/2 | % XML measure 5
+  s1*3/2 | % XML measure 6
+  s1*3/2 | % XML measure 7
+  s1*3/2 | % XML measure 8
+  s1*3/2 | % XML measure 9
+  s1*3/2 | % XML measure 10
+  s1*3/2 | % XML measure 11
+  s1*3/2 | % XML measure 12
+  s1*3/2 | % XML measure 13
+  s1*3/2 | % XML measure 14
+  s1*3/2 | % XML measure 15
+  s1*3/2 | % XML measure 16
+  s1*3/2 | % XML measure 17
+  s1*3/2 | % XML measure 18
+  s1*3/2 | % XML measure 19
+  s1*3/2 | % XML measure 20
+  s1*3/2 | % XML measure 21
+  s1*3/2 | % XML measure 22
+  s1*3/2 | % XML measure 23
+  s1*3/2 | % XML measure 24
+  s1*3/2 | % XML measure 25
+  s1*3/2 | % XML measure 26
+  s1*3/2 | % XML measure 27
+  \break
+  s1*3/2 | % XML measure 28
+  s1*3/2 | % XML measure 29
+  s1*3/2 | % XML measure 30
+  \break
+  s1*3/2 | % XML measure 31
+  s1*3/2 | % XML measure 32
+  \break
+  s1*3/4 | % XML measure 33
+  s1*3/4 | % XML measure 34
+  s1*1/2 | % XML measure 35
+  s1*3/2 | % XML measure 36
+  s1*3/2 | % XML measure 37
+}
+
 % All music is contained in this file; no external includes are required.
 \score {
   \new PianoStaff <<
@@ -550,7 +824,8 @@ pedalMidi = {
     \context Staff = "1" <<
       \mergeDifferentlyDottedOn
       \mergeDifferentlyHeadedOn
-      \new Voice = "rightMain" { \PartPOneVoiceOne }
+      \new Voice = "rightMain" { \applyMusic #nocturne-aFour-print \PartPOneVoiceOne }
+      \new NullVoice = "aFourLayout" { \aFourLayout }
     >>
     \context Staff = "2" <<
       \mergeDifferentlyDottedOn
